@@ -5,39 +5,30 @@
 #  --cap-add mknod --cap-add sys_admin --device=/dev/fuse \
 #  -e S3_BUCKET=MY_S3_BUCKET -e S3_REGION=ap-southeast-2 \
 #  -e MNT_POINT=/data git.encompasshost.com:5001/encompass/images/s3fs:latest
+# example for ceph using:s3fs my-bucket /mnt/data-s3fs -o passwd_file=~/.passwd-s3fs,endpoint=default \
+# url=http://10.206.8.92:7480/,use_path_request_style,allow_other,use_cache=/tmp,max_stat_cache_size=1000,curldbg
+# docker run --rm --privileged -d -e S3_BUCKET=my-bucket-1 -e S3_REGION=default -e AWS_KEY=xxx 
+# -e AWS_SECRET_KEY=xxxx -v /data-1/s3fs-data:/data:shared s3fs:v2
 ########################################################
  
 FROM ubuntu:16.04
  
 LABEL maintainer="qspeng"
  
-ENV DUMB_INIT_VER 1.2.2
 ENV S3_BUCKET ''
 ENV MNT_POINT /data
-ENV S3_REGION ''
+ENV S3_REGION 'default'
 ENV AWS_KEY ''
 ENV AWS_SECRET_KEY ''
 ENV S3_URL 'http://10.206.8.92:7480/'
- 
+
+COPY docker-entrypoint.sh /usr/local/bin/
+
 RUN DEBIAN_FRONTEND=noninteractive apt-get -y update --fix-missing && \
-    apt-get install -y automake autotools-dev g++ git libcurl4-gnutls-dev wget \
-                       libfuse-dev libssl-dev libxml2-dev make pkg-config && \
-    git clone https://github.com/s3fs-fuse/s3fs-fuse.git /tmp/s3fs-fuse && \
-    cd /tmp/s3fs-fuse && ./autogen.sh && ./configure && make && make install && \
-    ldconfig && /usr/local/bin/s3fs --version && \
-    wget -O /tmp/dumb-init_${DUMB_INIT_VER}_amd64.deb https://github.com/Yelp/dumb-init/releases/download/v${DUMB_INIT_VER}/dumb-init_${DUMB_INIT_VER}_amd64.deb && \
-    dpkg -i /tmp/dumb-init_*.deb
- 
-RUN echo "${AWS_KEY}:${AWS_SECRET_KEY}" > /etc/passwd-s3fs && \
-    chmod 0400 /etc/passwd-s3fs
- 
-RUN mkdir -p "$MNT_POINT"
- 
-RUN DEBIAN_FRONTEND=noninteractive apt-get purge -y wget automake autotools-dev g++ git make && \
-    apt-get -y autoremove --purge && apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
- 
-# Runs "/usr/bin/dumb-init -- CMD_COMMAND_HERE"
-#ENTRYPOINT ["/usr/bin/dumb-init", "--"]
- 
-CMD exec /usr/local/bin/s3fs $S3_BUCKET $MNT_POINT -f -o endpoint=${S3_REGION},url=${S3_URL},use_path_request_style,allow_other,use_cache=/tmp,max_stat_cache_size=1000,stat_cache_expire=900,retries=5,connect_timeout=10
+    apt-get -y install s3fs && \
+    ldconfig && s3fs --version && \
+    echo "${AWS_KEY}:${AWS_SECRET_KEY}" > /etc/passwd-s3fs && \
+    chmod 600 /etc/passwd-s3fs && mkdir -p "$MNT_POINT" && \
+    chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["docker-entrypoint.sh"]
